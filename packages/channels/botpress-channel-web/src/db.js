@@ -1,6 +1,6 @@
 import moment from 'moment'
 import Promise from 'bluebird'
-import { orderBy, keyBy, throttle } from 'lodash'
+import { orderBy, keyBy, throttle, memoize } from 'lodash'
 import uuid from 'uuid'
 import ms from 'ms'
 import LRU from 'lru-cache'
@@ -119,13 +119,15 @@ module.exports = knex => {
     return res
   }
 
-  const bumpLastHeardOn = throttle(
-    conversationId =>
-      knex('web_conversations')
-        .where('id', conversationId)
-        .update({ last_heard_on: h.date.now() })
-        .then(),
-    50
+  const bumpLastHeardOn = memoize(conversationId =>
+    throttle(
+      () =>
+        knex('web_conversations')
+          .where('id', conversationId)
+          .update({ last_heard_on: h.date.now() })
+          .then(),
+      50
+    )
   )
 
   async function appendUserMessage(userId, conversationId, { type, text, raw, data }) {
@@ -151,7 +153,7 @@ module.exports = knex => {
         .insert(message)
         .then(),
 
-      bumpLastHeardOn(conversationId),
+      bumpLastHeardOn(conversationId)(),
 
       () => ({
         ...message,
